@@ -7,13 +7,18 @@
 //
 
 import Cocoa
+import CSV
+import Charts
 
-class Document: NSDocument {
+final class Document: NSDocument {
+  lazy var dateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    return f
+  }()
 
-  override init() {
-      super.init()
-    // Add your subclass-specific initialization here.
-  }
+  var url: URL?
+  var reader: CSVReader?
 
   override class var autosavesInPlace: Bool {
     return true
@@ -23,6 +28,8 @@ class Document: NSDocument {
     // Returns the Storyboard that contains your Document window.
     let storyboard = NSStoryboard(name: NSStoryboard.Name("Main"), bundle: nil)
     let windowController = storyboard.instantiateController(withIdentifier: NSStoryboard.SceneIdentifier("Document Window Controller")) as! NSWindowController
+    let viewController = windowController.contentViewController as! ViewController
+    viewController.document = self
     self.addWindowController(windowController)
   }
 
@@ -32,13 +39,43 @@ class Document: NSDocument {
     throw NSError(domain: NSOSStatusErrorDomain, code: unimpErr, userInfo: nil)
   }
 
-  override func read(from data: Data, ofType typeName: String) throws {
-    // Insert code here to read your document from the given data of the specified type. If outError != nil, ensure that you create and set an appropriate error when returning false.
-    // You can also choose to override readFromFileWrapper:ofType:error: or readFromURL:ofType:error: instead.
-    // If you override either of these, you should also override -isEntireFileLoaded to return false if the contents are lazily loaded.
-    throw NSError(domain: NSOSStatusErrorDomain, code: unimpErr, userInfo: nil)
+  override func read(from url: URL, ofType typeName: String) throws {
+    self.url = url
   }
 
+  func readData() throws -> LineChartData {
+    guard let url = url else {
+      return LineChartData()
+    }
 
+    guard let stream = InputStream(url: url) else {
+      throw NSError(domain: NSOSStatusErrorDomain, code: ioErr)
+    }
+
+    let reader = try CSVReader(stream: stream)
+    self.reader = reader
+
+    let data = LineChartData()
+    var entries = [ChartDataEntry]()
+
+    for row in reader {
+      guard let date = dateFormatter.date(from: row[0]),
+      let y = Double(row[1]) else {
+        continue
+      }
+
+      entries.append(ChartDataEntry(x: date.timeIntervalSinceReferenceDate,
+                                    y: y))
+    }
+
+    let ds = LineChartDataSet(values: entries.sorted {
+      $0.x < $1.x
+    }, label: "Unique Hits")
+    ds.valueFont = .systemFont(ofSize: dataSetSize)
+    ds.colors = [.blue]
+    data.addDataSet(ds)
+
+    return data
+  }
 }
 
